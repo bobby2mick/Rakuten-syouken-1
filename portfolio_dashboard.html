@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ポートフォリオ ダッシュボード</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap');
+  :root {
+    --bg:#0f1117; --bg2:#161b27; --bg3:#1e2538;
+    --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.13);
+    --text:#e8eaf0; --text2:#8b90a0; --text3:#555c70;
+    --blue:#4f8ef7; --green:#3ecf8e; --amber:#f5a623; --red:#f06060;
+    --purple:#a78bfa; --radius:12px; --radius-sm:8px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;}
+
+/* Drop zone */
+#drop-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:20px;padding:2rem;}
+#drop-zone.hidden{display:none;}
+.drop-box{border:2px dashed var(--border2);border-radius:20px;padding:60px 80px;text-align:center;max-width:520px;width:100%;transition:border-color .2s,background .2s;}
+.drop-box.dragover{border-color:var(--blue);background:rgba(79,142,247,0.05);}
+.drop-icon{font-size:48px;margin-bottom:16px;}
+.drop-title{font-size:20px;font-weight:500;margin-bottom:8px;}
+.drop-sub{color:var(--text2);font-size:13px;margin-bottom:20px;}
+.btn-upload{display:inline-block;background:var(--blue);color:#fff;border:none;border-radius:var(--radius-sm);padding:10px 24px;font-size:14px;font-family:inherit;cursor:pointer;}
+.drop-hint{font-size:12px;color:var(--text3);max-width:480px;text-align:center;line-height:1.9;}
+
+/* Error */
+#error-box{display:none;background:rgba(240,96,96,0.1);border:1px solid rgba(240,96,96,0.3);border-radius:var(--radius);padding:16px 20px;max-width:520px;width:100%;color:#f06060;font-size:13px;line-height:1.7;white-space:pre-wrap;}
+#error-box.visible{display:block;}
+
+/* Dashboard */
+#dashboard{display:none;}
+#dashboard.visible{display:block;}
+header{display:flex;align-items:center;justify-content:space-between;padding:18px 32px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:100;}
+.logo{font-size:16px;font-weight:700;letter-spacing:.03em;}
+.logo span{color:var(--blue);}
+.date-badge{font-size:12px;color:var(--text2);background:var(--bg3);padding:4px 12px;border-radius:20px;font-family:'DM Mono',monospace;margin-left:12px;}
+.btn-reload{font-size:12px;color:var(--text2);background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:7px 16px;cursor:pointer;font-family:inherit;}
+.btn-reload:hover{color:var(--text);border-color:var(--blue);}
+main{padding:24px 32px;max-width:1400px;margin:0 auto;}
+
+/* Metrics */
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:24px;}
+.metric-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
+.metric-label{font-size:11px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px;}
+.metric-value{font-size:22px;font-weight:700;font-family:'DM Mono',monospace;letter-spacing:-.02em;}
+.metric-sub{font-size:12px;margin-top:4px;font-family:'DM Mono',monospace;}
+.pos{color:var(--green);} .neg{color:var(--red);} .neu{color:var(--text2);}
+
+/* Charts */
+.charts-row{display:grid;grid-template-columns:320px minmax(0,1fr);gap:14px;margin-bottom:24px;}
+.chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;}
+.chart-title{font-size:11px;font-weight:500;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px;}
+.donut-wrap{position:relative;width:160px;height:160px;margin:0 auto 12px;}
+.donut-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;}
+.donut-center-val{font-size:16px;font-weight:700;font-family:'DM Mono',monospace;}
+.donut-center-label{font-size:10px;color:var(--text3);}
+.legend-list{display:flex;flex-direction:column;gap:7px;}
+.legend-item{display:flex;align-items:center;justify-content:space-between;font-size:12px;}
+.legend-left{display:flex;align-items:center;gap:7px;}
+.legend-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0;}
+.legend-name{color:var(--text2);}
+.legend-val{font-family:'DM Mono',monospace;color:var(--text);}
+
+/* Table */
+.table-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:24px;}
+.table-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+.tab-bar{display:flex;gap:6px;flex-wrap:wrap;}
+.tab{font-size:12px;padding:5px 14px;border-radius:20px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-family:inherit;transition:all .15s;}
+.tab:hover{color:var(--text);border-color:var(--blue);}
+.tab.active{background:var(--blue);color:#fff;border-color:var(--blue);}
+.table-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{text-align:left;font-size:11px;font-weight:500;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text);white-space:nowrap;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(255,255,255,0.02);}
+.mono{font-family:'DM Mono',monospace;}
+.badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:500;}
+.badge-nisa{background:rgba(79,142,247,0.15);color:#6fa8ff;}
+.badge-tsumitate{background:rgba(167,139,250,0.15);color:#c4b0ff;}
+.badge-toku{background:rgba(62,207,142,0.15);color:#5de0a8;}
+.badge-old{background:rgba(139,144,160,0.15);color:#9da3b4;}
+.badge-other{background:rgba(139,144,160,0.1);color:#8b90a0;}
+.sort-btn{cursor:pointer;user-select:none;}
+.sort-btn:hover{color:var(--blue);}
+.bottom-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
+
+@media(max-width:900px){
+  .metrics{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .charts-row,.bottom-row{grid-template-columns:1fr;}
+  header,main{padding-left:16px;padding-right:16px;}
+}
+</style>
+</head>
+<body>
+
+<div id="drop-zone">
+  <div class="drop-box" id="drop-box">
+    <div class="drop-icon">📂</div>
+    <div class="drop-title">CSVをドロップ</div>
+    <div class="drop-sub">楽天証券からダウンロードしたCSVファイルを読み込みます</div>
+    <label class="btn-upload">ファイルを選択<input type="file" accept=".csv" id="file-input" style="display:none;"></label>
+  </div>
+  <div id="error-box"></div>
+  <div class="drop-hint">
+    楽天証券 → 資産状況 →「CSVダウンロード」で取得したファイルをそのままドロップ<br>
+    データはブラウザ内だけで処理され、外部には一切送信されません<br>
+    UTF-8・Shift-JIS どちらの形式にも自動対応します
+  </div>
+</div>
+
+<div id="dashboard">
+  <header>
+    <div style="display:flex;align-items:center;">
+      <div class="logo">Portfolio <span>//</span> Dashboard</div>
+      <div class="date-badge" id="header-date">—</div>
+    </div>
+    <button class="btn-reload" onclick="resetDashboard()">↩ 別のCSVを読み込む</button>
+  </header>
+  <main>
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="metric-label">資産合計</div>
+        <div class="metric-value" id="m-total">—</div>
+        <div class="metric-sub" id="m-daily">—</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">評価損益</div>
+        <div class="metric-value" id="m-pl">—</div>
+        <div class="metric-sub neu">前月比 <span id="m-monthly-val">—</span></div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">実現損益</div>
+        <div class="metric-value" id="m-realized">—</div>
+        <div class="metric-sub neu">確定利益（累計）</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">配当・分配金</div>
+        <div class="metric-value" id="m-div">—</div>
+        <div class="metric-sub neu">累計受取（円貨）</div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">アセット構成</div>
+        <div class="donut-wrap">
+          <canvas id="donut-chart" role="img" aria-label="アセット構成比"></canvas>
+          <div class="donut-center">
+            <div class="donut-center-val" id="donut-total">—</div>
+            <div class="donut-center-label">合計</div>
+          </div>
+        </div>
+        <div class="legend-list" id="donut-legend"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">カテゴリ別 評価損益</div>
+        <div style="position:relative;height:240px;">
+          <canvas id="bar-chart" role="img" aria-label="カテゴリ別評価損益"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header">
+        <div class="chart-title" style="margin-bottom:0;">保有銘柄明細</div>
+        <div class="tab-bar" id="tab-bar">
+          <button class="tab active" onclick="filterTable('all',this)">すべて</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>種別</th><th>銘柄</th><th>口座</th>
+            <th class="sort-btn" onclick="sortTable('val')" style="text-align:right;">時価評価額 ↕</th>
+            <th class="sort-btn" onclick="sortTable('pl')" style="text-align:right;">評価損益 ↕</th>
+            <th class="sort-btn" onclick="sortTable('plp')" style="text-align:right;">損益率 ↕</th>
+          </tr></thead>
+          <tbody id="stock-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="bottom-row">
+      <div class="chart-card">
+        <div class="chart-title">前月比パフォーマンス</div>
+        <div style="position:relative;height:200px;">
+          <canvas id="mom-chart" role="img" aria-label="前月比パフォーマンス"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">口座別 時価評価額</div>
+        <div style="position:relative;height:200px;">
+          <canvas id="acct-chart" role="img" aria-label="口座別時価評価額"></canvas>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ── 状態 ──
+let allStocks = [], currentFilter = 'all', sortKey = 'val', sortAsc = false, charts = {};
+let knownTypes = [];
+
+const COLOR_PALETTE = ['#4f8ef7','#3ecf8e','#f5a623','#f06060','#a78bfa','#2dd4bf','#fb923c','#e879f9'];
+const typeColorMap = {};
+let colorIdx = 0;
+function getColor(type) {
+  if (!typeColorMap[type]) {
+    typeColorMap[type] = COLOR_PALETTE[colorIdx % COLOR_PALETTE.length];
+    colorIdx++;
+  }
+  return typeColorMap[type];
+}
+
+// ── 数値変換 ──
+function toNum(s) {
+  if (s === null || s === undefined) return 0;
+  const str = String(s).trim();
+  if (str === '' || str === '-' || str === '未取得') return 0;
+  return parseInt(str.replace(/[+＋,，\s円]/g, '')) || 0;
+}
+function toFloat(s) {
+  if (s === null || s === undefined) return 0;
+  const str = String(s).trim();
+  if (str === '' || str === '-') return 0;
+  return parseFloat(str.replace(/[+＋,，\s%％]/g, '')) || 0;
+}
+function fmt(n) {
+  const a = Math.abs(n);
+  if (a >= 1e8) return (n / 1e8).toFixed(2) + '億円';
+  if (a >= 1e4) return Math.round(n / 1e4) + '万円';
+  return n.toLocaleString() + '円';
+}
+function fmtSign(n) { return (n >= 0 ? '+' : '') + fmt(n); }
+function fmtPct(n)  { return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'; }
+
+// ── CSVパース（楽天証券フォーマット・列位置に依存しない）──
+function parseRakutenCSV(text) {
+  const parsed = Papa.parse(text, { skipEmptyLines: false });
+  const rows = parsed.data;
+
+  let totalAsset = 0, dailyChange = 0, monthlyChange = 0;
+  let evalPL = 0, realizedPL = 0, dividend = 0;
+  const momByType = {};
+
+  let sumValIdx = 1, sumDailyIdx = 2, sumMonthlyIdx = 4, sumPLIdx = 6, sumRealizedIdx = 9, sumDivIdx = 10;
+
+  // サマリーヘッダー行でカラムインデックスを動的取得
+  for (let i = 0; i < Math.min(5, rows.length); i++) {
+    const row = rows[i];
+    for (let j = 0; j < row.length; j++) {
+      const v = (row[j] || '').trim();
+      if (v === '時価評価額[円]') sumValIdx = j;
+      if (v === '前日比[円]') sumDailyIdx = j;
+      if (v === '前月比[円]') sumMonthlyIdx = j;
+      if (v === '評価損益[円]') sumPLIdx = j;
+      if (v === '実現損益[円]') sumRealizedIdx = j;
+      if (v.includes('配当') && v.includes('円貨')) sumDivIdx = j;
+    }
+  }
+
+  const SUMMARY_CATS = ['国内株式', '米国株式', '中国株式', 'アセアン株式', '投資信託',
+                        '楽ラップ', '金・プラチナ', '国内債券', '外国債券', '楽天・マネーファンド', '外貨建MMF'];
+
+  for (const row of rows) {
+    const key = (row[0] || '').trim();
+    if (key === '資産合計') {
+      totalAsset    = toNum(row[sumValIdx]);
+      dailyChange   = toNum(row[sumDailyIdx]);
+      monthlyChange = toNum(row[sumMonthlyIdx]);
+      evalPL        = toNum(row[sumPLIdx]);
+      realizedPL    = toNum(row[sumRealizedIdx]);
+      dividend      = toNum(row[sumDivIdx]);
+    }
+    if (SUMMARY_CATS.includes(key) && toNum(row[sumMonthlyIdx]) !== 0) {
+      momByType[key] = toNum(row[sumMonthlyIdx]);
+    }
+  }
+
+  // 詳細ヘッダー行を動的に発見
+  let headerIdx = -1;
+  let colIdx = {};
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const hasType = row.some(c => (c || '').trim() === '種別');
+    const hasName = row.some(c => (c || '').trim() === '銘柄');
+    const hasVal  = row.some(c => (c || '').trim() === '時価評価額[円]');
+    if (hasType && hasName && hasVal) {
+      headerIdx = i;
+      row.forEach((col, j) => {
+        const name = (col || '').trim();
+        if (name) colIdx[name] = j;
+      });
+      break;
+    }
+  }
+
+  if (headerIdx < 0) {
+    throw new Error('詳細データのヘッダー行が見つかりませんでした。楽天証券形式のCSVか確認してください。');
+  }
+
+  const required = ['種別', '銘柄', '時価評価額[円]', '評価損益[円]', '評価損益[％]'];
+  const missing = required.filter(c => colIdx[c] === undefined);
+  if (missing.length > 0) {
+    throw new Error(`必要なカラムが見つかりません: ${missing.join(', ')}`);
+  }
+
+  const iType  = colIdx['種別'];
+  const iName  = colIdx['銘柄'];
+  const iAcct  = colIdx['口座'] !== undefined ? colIdx['口座'] : 3;
+  const iVal   = colIdx['時価評価額[円]'];
+  const iPL    = colIdx['評価損益[円]'];
+  const iPLpct = colIdx['評価損益[％]'];
+
+  const SKIP_TYPES = new Set([
+    '楽天・マネーファンド', '外貨建MMF', '外貨預り金', '預り金', '預り金合計',
+    '', '種別'
+  ]);
+  const STOP_KEYWORDS = ['■', '参考為替', '楽天銀行'];
+
+  const stocks = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const type = (row[iType] || '').trim();
+
+    if (!type) continue;
+    if (STOP_KEYWORDS.some(kw => type.startsWith(kw))) break;
+    if (SKIP_TYPES.has(type)) continue;
+
+    const name = (row[iName] || '').trim();
+    if (!name || name === '現金等' || name === '米ドル' || name === 'NaN') continue;
+
+    const acct = (row[iAcct] || '-').trim();
+    const val  = toNum(row[iVal]);
+    const pl   = toNum(row[iPL]);
+    const plp  = toFloat(row[iPLpct]);
+
+    if (val <= 0) continue;
+
+    stocks.push({ type, name, acct, val, pl, plp });
+  }
+
+  return { totalAsset, dailyChange, monthlyChange, evalPL, realizedPL, dividend, stocks, momByType };
+}
+
+// ── レンダリング ──
+function render(data) {
+  const { totalAsset, dailyChange, monthlyChange, evalPL, realizedPL, dividend, stocks, momByType } = data;
+  allStocks = stocks;
+
+  document.getElementById('header-date').textContent = new Date().toLocaleDateString('ja-JP');
+
+  document.getElementById('m-total').textContent = fmt(totalAsset);
+
+  const dc = document.getElementById('m-daily');
+  dc.textContent = fmtSign(dailyChange);
+  dc.className = 'metric-sub ' + (dailyChange >= 0 ? 'pos' : 'neg');
+
+  const plEl = document.getElementById('m-pl');
+  plEl.textContent = fmtSign(evalPL);
+  plEl.className = 'metric-value ' + (evalPL >= 0 ? 'pos' : 'neg');
+
+  const mv = document.getElementById('m-monthly-val');
+  mv.textContent = fmtSign(monthlyChange);
+  mv.className = monthlyChange >= 0 ? 'pos' : 'neg';
+
+  const rl = document.getElementById('m-realized');
+  rl.textContent = fmtSign(realizedPL);
+  rl.className = 'metric-value ' + (realizedPL >= 0 ? 'pos' : 'neg');
+
+  document.getElementById('m-div').textContent = fmt(dividend);
+
+  const groups = {};
+  for (const s of stocks) {
+    if (!groups[s.type]) groups[s.type] = { val: 0, pl: 0 };
+    groups[s.type].val += s.val;
+    groups[s.type].pl  += s.pl;
+  }
+  const gkeys = Object.keys(groups).sort((a, b) => groups[b].val - groups[a].val);
+  const total = gkeys.reduce((s, k) => s + groups[k].val, 0);
+
+  knownTypes = gkeys;
+  const tabBar = document.getElementById('tab-bar');
+  tabBar.innerHTML = `<button class="tab active" onclick="filterTable('all',this)">すべて</button>`;
+  gkeys.forEach(type => {
+    tabBar.innerHTML += `<button class="tab" onclick="filterTable('${type}',this)">${type}</button>`;
+  });
+
+  document.getElementById('donut-total').textContent = Math.round(total / 1e4) + '万';
+  document.getElementById('donut-legend').innerHTML = gkeys.map(k => `
+    <div class="legend-item">
+      <div class="legend-left">
+        <div class="legend-dot" style="background:${getColor(k)}"></div>
+        <span class="legend-name">${k}</span>
+      </div>
+      <span class="legend-val">${(groups[k].val / total * 100).toFixed(1)}%</span>
+    </div>`).join('');
+
+  destroyChart('donut');
+  charts.donut = new Chart(document.getElementById('donut-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: gkeys,
+      datasets: [{
+        data: gkeys.map(k => groups[k].val),
+        backgroundColor: gkeys.map(k => getColor(k)),
+        borderWidth: 2, borderColor: '#161b27'
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true, cutout: '70%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => `${Math.round(c.raw / 1e4)}万円 (${(c.raw / total * 100).toFixed(1)}%)` } }
+      }
+    }
+  });
+
+  destroyChart('bar');
+  charts.bar = new Chart(document.getElementById('bar-chart'), {
+    type: 'bar',
+    data: {
+      labels: gkeys,
+      datasets: [{
+        label: '評価損益',
+        data: gkeys.map(k => groups[k].pl),
+        backgroundColor: gkeys.map(k => getColor(k) + 'bb'),
+        borderRadius: 5, borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => `${c.raw >= 0 ? '+' : ''}${Math.round(c.raw / 1e4)}万円` } }
+      },
+      scales: {
+        y: { ticks: { callback: v => `${Math.round(v / 1e4)}万`, color: '#555c70', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        x: { ticks: { color: '#8b90a0', font: { size: 12 } }, grid: { display: false } }
+      }
+    }
+  });
+
+  const momKeys = Object.keys(momByType).filter(k => momByType[k] !== 0);
+  const momVals = momKeys.map(k => momByType[k]);
+  destroyChart('mom');
+  if (momKeys.length > 0) {
+    charts.mom = new Chart(document.getElementById('mom-chart'), {
+      type: 'bar',
+      data: {
+        labels: momKeys,
+        datasets: [{
+          data: momVals,
+          backgroundColor: momVals.map(v => v >= 0 ? 'rgba(62,207,142,0.5)' : 'rgba(240,96,96,0.5)'),
+          borderColor:      momVals.map(v => v >= 0 ? '#3ecf8e' : '#f06060'),
+          borderWidth: 1.5, borderRadius: 5, borderSkipped: false
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `前月比: ${c.raw >= 0 ? '+' : ''}${c.raw.toLocaleString()}円` } } },
+        scales: {
+          y: { ticks: { callback: v => `${Math.round(v / 1e4)}万`, color: '#555c70', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+          x: { ticks: { color: '#8b90a0', font: { size: 12 } }, grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  const acctMap = {};
+  for (const s of stocks) {
+    let k = s.acct;
+    if (k.includes('NISA成長')) k = 'NISA成長投資枠';
+    else if (k.includes('つみたて') || k.includes('積立')) k = 'NISAつみたて';
+    else if (k.includes('旧NISA')) k = '旧NISA';
+    else if (k === '特定') k = '特定';
+    else if (k === '-' || k === '') k = 'その他';
+    acctMap[k] = (acctMap[k] || 0) + s.val;
+  }
+  const acctKeys = Object.keys(acctMap).sort((a, b) => acctMap[b] - acctMap[a]);
+  const acctColorMap = {
+    '特定': '#4f8ef7', 'NISA成長投資枠': '#3ecf8e', 'NISAつみたて': '#a78bfa',
+    '旧NISA': '#f5a623', 'その他': '#8b90a0'
+  };
+  destroyChart('acct');
+  charts.acct = new Chart(document.getElementById('acct-chart'), {
+    type: 'bar',
+    data: {
+      labels: acctKeys,
+      datasets: [{
+        data: acctKeys.map(k => acctMap[k]),
+        backgroundColor: acctKeys.map(k => acctColorMap[k] || '#8b90a0'),
+        borderRadius: 5, borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${Math.round(c.raw / 1e4)}万円` } } },
+      scales: {
+        y: { ticks: { callback: v => `${Math.round(v / 1e4)}万`, color: '#555c70', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        x: { ticks: { color: '#8b90a0', font: { size: 12 } }, grid: { display: false } }
+      }
+    }
+  });
+
+  currentFilter = 'all';
+  renderTable();
+
+  document.getElementById('drop-zone').classList.add('hidden');
+  document.getElementById('dashboard').classList.add('visible');
+}
+
+function destroyChart(key) {
+  if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+}
+
+// ── テーブル ──
+function renderTable() {
+  let rows = currentFilter === 'all' ? [...allStocks] : allStocks.filter(s => s.type === currentFilter);
+  rows.sort((a, b) => sortAsc ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]);
+
+  document.getElementById('stock-tbody').innerHTML = rows.map(s => {
+    let badgeClass = 'badge-other', badgeLabel = s.acct;
+    if (s.acct.includes('NISA成長'))                                    { badgeClass = 'badge-nisa';       badgeLabel = 'NISA成長'; }
+    else if (s.acct.includes('つみたて') || s.acct.includes('積立'))    { badgeClass = 'badge-tsumitate'; badgeLabel = 'つみたて'; }
+    else if (s.acct.includes('旧NISA'))                                 { badgeClass = 'badge-old';        badgeLabel = '旧NISA'; }
+    else if (s.acct === '特定')                                         { badgeClass = 'badge-toku';       badgeLabel = '特定'; }
+
+    return `<tr>
+      <td style="color:#555c70;font-size:12px;">${s.type}</td>
+      <td style="font-weight:500;max-width:220px;overflow:hidden;text-overflow:ellipsis;" title="${s.name}">${s.name}</td>
+      <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+      <td class="mono" style="text-align:right;">${Math.round(s.val / 1e4)}万円</td>
+      <td class="mono ${s.pl >= 0 ? 'pos' : 'neg'}" style="text-align:right;">${fmtSign(s.pl)}</td>
+      <td class="mono ${s.plp >= 0 ? 'pos' : 'neg'}" style="text-align:right;">${fmtPct(s.plp)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function filterTable(type, btn) {
+  currentFilter = type;
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable();
+}
+
+function sortTable(key) {
+  sortAsc = sortKey === key ? !sortAsc : false;
+  sortKey = key;
+  renderTable();
+}
+
+function resetDashboard() {
+  document.getElementById('dashboard').classList.remove('visible');
+  document.getElementById('drop-zone').classList.remove('hidden');
+  document.getElementById('file-input').value = '';
+  showError('');
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-box');
+  if (msg) { el.textContent = msg; el.classList.add('visible'); }
+  else      { el.textContent = ''; el.classList.remove('visible'); }
+}
+
+// ── ファイル読み込み（UTF-8優先・Shift-JISフォールバック）──
+// 修正点: 従来はバイト値でShift-JISを判定していたが、UTF-8の日本語バイト列にも
+// 0xE0-0xFCが含まれるため誤判定が発生していた。
+// 修正後: TextDecoder の fatal:true オプションでUTF-8デコードを試み、
+// 失敗した場合のみShift-JISにフォールバックする堅牢な方式に変更。
+function handleFile(file) {
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    showError('CSVファイル（.csv）を選択してください。');
+    return;
+  }
+  showError('');
+  const reader = new FileReader();
+  reader.onload = e => {
+    const buf = e.target.result;
+    let text;
+
+    // UTF-8を優先して試みる（fatal:true で不正バイトがあれば例外）
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+    } catch (e1) {
+      // UTF-8でデコード失敗 → Shift-JISにフォールバック
+      try {
+        text = new TextDecoder('shift_jis').decode(buf);
+      } catch (e2) {
+        // 最終フォールバック（エラー置換付きUTF-8）
+        text = new TextDecoder('utf-8').decode(buf);
+      }
+    }
+
+    try {
+      const data = parseRakutenCSV(text);
+      if (data.stocks.length === 0) {
+        showError('銘柄データが見つかりませんでした。\n楽天証券の「資産状況CSV」をお使いください。');
+        return;
+      }
+      render(data);
+    } catch (err) {
+      showError('読み込みエラー: ' + err.message + '\n\n楽天証券の「資産状況CSV」をそのままお使いください。');
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Drag & drop
+const dropBox  = document.getElementById('drop-box');
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropBox.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', ()  => dropBox.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropBox.classList.remove('dragover');
+  handleFile(e.dataTransfer.files[0]);
+});
+document.getElementById('file-input').addEventListener('change', e => handleFile(e.target.files[0]));
+</script>
+
+</body>
+</html>
