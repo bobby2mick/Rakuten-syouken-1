@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>配当金集計 ダッシュボード v1.2</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap');
+  :root {
+    --bg:#0f1117; --bg2:#161b27; --bg3:#1e2538;
+    --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.13);
+    --text:#e8eaf0; --text2:#8b90a0; --text3:#555c70;
+    --blue:#4f8ef7; --green:#3ecf8e; --amber:#f5a623; --red:#f06060;
+    --purple:#a78bfa; --radius:12px; --radius-sm:8px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;}
+
+  /* ── Setup Screen ── */
+  #setup-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:20px;padding:2rem;}
+  #setup-screen.hidden{display:none;}
+  .setup-card{background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:40px;max-width:540px;width:100%;}
+  .setup-icon{font-size:40px;margin-bottom:16px;text-align:center;}
+  .setup-title{font-size:20px;font-weight:700;margin-bottom:6px;text-align:center;}
+  .setup-sub{color:var(--text2);font-size:13px;text-align:center;margin-bottom:28px;line-height:1.8;}
+  .form-label{font-size:11px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;}
+  .form-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 14px;font-size:14px;font-family:'DM Mono',monospace;color:var(--text);outline:none;transition:border-color .2s;}
+  .form-input:focus{border-color:var(--blue);}
+  .form-group{margin-bottom:18px;}
+  .drop-box{border:2px dashed var(--border2);border-radius:var(--radius);padding:28px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:18px;}
+  .drop-box.dragover{border-color:var(--blue);background:rgba(79,142,247,0.05);}
+  .drop-box-text{color:var(--text2);font-size:13px;}
+  .drop-box-text span{color:var(--blue);cursor:pointer;}
+  .btn-primary{width:100%;background:var(--blue);color:#fff;border:none;border-radius:var(--radius-sm);padding:12px;font-size:14px;font-family:inherit;font-weight:500;cursor:pointer;transition:opacity .2s;}
+  .btn-primary:hover{opacity:.85;}
+  .btn-primary:disabled{opacity:.4;cursor:not-allowed;}
+  .hint{font-size:11px;color:var(--text3);margin-top:6px;line-height:1.7;}
+  .security-note{background:rgba(62,207,142,0.06);border:1px solid rgba(62,207,142,0.2);border-radius:var(--radius-sm);padding:10px 14px;font-size:12px;color:#5de0a8;margin-top:16px;line-height:1.7;}
+
+  /* ── Loading ── */
+  #loading-screen{display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;}
+  #loading-screen.visible{display:flex;}
+  .spinner{width:40px;height:40px;border:3px solid var(--border2);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .loading-text{color:var(--text2);font-size:14px;}
+  .loading-detail{color:var(--text3);font-size:12px;font-family:'DM Mono',monospace;}
+
+  /* ── Error ── */
+  #error-box{display:none;background:rgba(240,96,96,0.1);border:1px solid rgba(240,96,96,0.3);border-radius:var(--radius-sm);padding:14px 16px;color:#f06060;font-size:13px;line-height:1.7;white-space:pre-wrap;margin-top:16px;}
+  #error-box.visible{display:block;}
+
+  /* ── Dashboard ── */
+  #dashboard{display:none;}
+  #dashboard.visible{display:block;}
+  header{display:flex;align-items:center;justify-content:space-between;padding:18px 32px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:100;}
+  .logo{font-size:16px;font-weight:700;letter-spacing:.03em;}
+  .logo span{color:var(--amber);}
+  .date-badge{font-size:12px;color:var(--text2);background:var(--bg3);padding:4px 12px;border-radius:20px;font-family:'DM Mono',monospace;margin-left:12px;}
+  .btn-reload{font-size:12px;color:var(--text2);background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:7px 16px;cursor:pointer;font-family:inherit;}
+  .btn-reload:hover{color:var(--text);border-color:var(--blue);}
+  main{padding:24px 32px;max-width:1200px;margin:0 auto;}
+
+  /* Metrics */
+  .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:24px;}
+  .metric-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
+  .metric-label{font-size:11px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px;}
+  .metric-value{font-size:22px;font-weight:700;font-family:'DM Mono',monospace;letter-spacing:-.02em;}
+  .metric-sub{font-size:12px;margin-top:4px;color:var(--text2);}
+  .amber{color:var(--amber);} .green{color:var(--green);} .blue{color:var(--blue);}
+
+  /* Charts row */
+  .charts-row{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;margin-bottom:24px;}
+  .chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;}
+  .chart-title{font-size:11px;font-weight:500;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px;}
+
+  /* Table */
+  .table-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:24px;}
+  .table-wrap{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;font-size:11px;font-weight:500;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  td{padding:10px 10px;border-bottom:1px solid var(--border);color:var(--text);white-space:nowrap;}
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:rgba(255,255,255,0.02);}
+  .mono{font-family:'DM Mono',monospace;}
+  .badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:500;}
+  .badge-ok{background:rgba(62,207,142,0.15);color:#5de0a8;}
+  .badge-na{background:rgba(139,144,160,0.15);color:#9da3b4;}
+  .badge-nisa{background:rgba(79,142,247,0.15);color:#6fa8ff;}
+  .badge-toku{background:rgba(62,207,142,0.15);color:#5de0a8;}
+  .badge-old{background:rgba(245,166,35,0.15);color:#f5c842;}
+
+  /* Warning banner */
+  .warn-banner{background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.25);border-radius:var(--radius-sm);padding:10px 16px;font-size:12px;color:var(--amber);margin-bottom:16px;line-height:1.7;}
+
+  @media(max-width:900px){
+    .metrics{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .charts-row{grid-template-columns:1fr;}
+    header,main{padding-left:16px;padding-right:16px;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Setup Screen ── -->
+<div id="setup-screen">
+  <div class="setup-card">
+    <div class="setup-icon">💴</div>
+    <div class="setup-title">配当金集計ダッシュボード</div>
+    <div class="setup-sub">楽天証券CSVと J-Quants APIキーを設定すると<br>国内株式の年間配当予想を自動集計します</div>
+
+    <div class="form-group">
+      <div class="form-label">J-Quants APIキー</div>
+      <input type="password" class="form-input" id="api-key-input" placeholder="APIキーを入力...">
+      <div class="hint">入力したキーはブラウザ内にのみ保存され、外部には送信されません</div>
+    </div>
+
+    <div class="form-group">
+      <div class="form-label">楽天証券 CSV ファイル</div>
+      <div class="drop-box" id="drop-box">
+        <div class="drop-box-text">📂 ここにドロップ、または <span onclick="document.getElementById('file-input').click()">ファイルを選択</span></div>
+        <div id="file-name" style="margin-top:8px;font-size:12px;color:var(--text3);font-family:'DM Mono',monospace;"></div>
+        <input type="file" accept=".csv" id="file-input" style="display:none;">
+      </div>
+    </div>
+
+    <div id="error-box"></div>
+
+    <button class="btn-primary" id="start-btn" onclick="startAnalysis()" disabled>配当金を集計する</button>
+
+    <div class="security-note">
+      🔒 すべての処理はブラウザ内で完結します。CSVデータ・APIキーともに外部サーバーには送信されません。
+    </div>
+  </div>
+</div>
+
+<!-- ── Loading Screen ── -->
+<div id="loading-screen">
+  <div class="spinner"></div>
+  <div class="loading-text">配当データを取得中...</div>
+  <div class="loading-detail" id="loading-detail">銘柄情報を確認しています</div>
+</div>
+
+<!-- ── Dashboard ── -->
+<div id="dashboard">
+  <header>
+    <div style="display:flex;align-items:center;">
+      <div class="logo">配当金 <span>//</span> 集計</div>
+      <div class="date-badge" style="margin-left:8px;font-size:11px;color:var(--text3);">v1.2</div>
+      <div class="date-badge" id="header-date">—</div>
+    </div>
+    <button class="btn-reload" onclick="resetAll()">↩ やり直す</button>
+  </header>
+  <main>
+    <div id="warn-banner-wrap"></div>
+
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="metric-label">年間配当予想合計</div>
+        <div class="metric-value amber" id="m-total-div">—</div>
+        <div class="metric-sub">国内株式（税引前）</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">月平均配当</div>
+        <div class="metric-value" id="m-monthly-div">—</div>
+        <div class="metric-sub">年間÷12</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">平均配当利回り</div>
+        <div class="metric-value green" id="m-avg-yield">—</div>
+        <div class="metric-sub">時価評価額加重平均</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">配当取得済み銘柄</div>
+        <div class="metric-value blue" id="m-coverage">—</div>
+        <div class="metric-sub">J-Quants取得成功</div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">銘柄別 年間配当予想額</div>
+        <div style="position:relative;height:280px;">
+          <canvas id="bar-chart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">口座別 配当内訳</div>
+        <div style="position:relative;height:280px;">
+          <canvas id="donut-chart"></canvas>
+        </div>
+        <div id="donut-legend" style="margin-top:12px;display:flex;flex-direction:column;gap:6px;font-size:12px;"></div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="chart-title" style="margin-bottom:14px;">保有銘柄 配当明細</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>銘柄</th>
+            <th>口座</th>
+            <th style="text-align:right;">保有株数</th>
+            <th style="text-align:right;">1株配当（予想）</th>
+            <th style="text-align:right;">年間配当額</th>
+            <th style="text-align:right;">時価評価額</th>
+            <th style="text-align:right;">配当利回り</th>
+            <th style="text-align:center;">データ</th>
+          </tr></thead>
+          <tbody id="div-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ── 状態 ──
+let csvFile = null;
+let charts = {};
+
+// ── ユーティリティ ──
+function toNum(s) {
+  if (!s) return 0;
+  return parseInt(String(s).trim().replace(/[+＋,，\s円]/g, '')) || 0;
+}
+function toFloat(s) {
+  if (!s) return 0;
+  return parseFloat(String(s).trim().replace(/[+＋,，\s%％]/g, '')) || 0;
+}
+function fmt(n) {
+  const a = Math.abs(n);
+  if (a >= 1e8) return (n/1e8).toFixed(2) + '億円';
+  if (a >= 1e4) return Math.round(n/1e4) + '万円';
+  return n.toLocaleString() + '円';
+}
+function fmtPct(n) { return n.toFixed(2) + '%'; }
+function showError(msg) {
+  const el = document.getElementById('error-box');
+  if (msg) { el.textContent = msg; el.classList.add('visible'); }
+  else      { el.textContent = ''; el.classList.remove('visible'); }
+}
+function setLoading(detail) {
+  document.getElementById('loading-detail').textContent = detail;
+}
+
+// ── ファイル読み込み（UTF-8優先・Shift-JISフォールバック）──
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const buf = e.target.result;
+      let text;
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+      } catch {
+        try { text = new TextDecoder('shift_jis').decode(buf); }
+        catch { text = new TextDecoder('utf-8').decode(buf); }
+      }
+      resolve(text);
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ── CSVパース（国内株式のみ抽出）──
+function parseCSV(text) {
+  const parsed = Papa.parse(text, { skipEmptyLines: false });
+  const rows = parsed.data;
+
+  // ヘッダー行を動的に発見
+  let headerIdx = -1, colIdx = {};
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.some(c => c.trim() === '種別') &&
+        row.some(c => c.trim() === '銘柄') &&
+        row.some(c => c.trim() === '時価評価額[円]')) {
+      headerIdx = i;
+      row.forEach((col, j) => { if (col.trim()) colIdx[col.trim()] = j; });
+      break;
+    }
+  }
+  if (headerIdx < 0) throw new Error('ヘッダー行が見つかりませんでした');
+
+  const iType  = colIdx['種別'];
+  const iCode  = colIdx['銘柄コード・ティッカー'];
+  const iName  = colIdx['銘柄'];
+  const iAcct  = colIdx['口座'] ?? 3;
+  const iQty   = colIdx['保有数量'];
+  const iVal   = colIdx['時価評価額[円]'];
+
+  const STOP = ['■', '参考為替', '楽天銀行'];
+  const stocks = [];
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const type = (row[iType] || '').trim();
+    if (!type) continue;
+    if (STOP.some(kw => type.startsWith(kw))) break;
+    if (type !== '国内株式') continue;  // 国内株式のみ
+
+    const code = (row[iCode] || '').trim();
+    const name = (row[iName] || '').trim();
+    if (!name || !code) continue;
+
+    const acct = (row[iAcct] || '-').trim();
+    const qty  = toFloat(row[iQty]);
+    const val  = toNum(row[iVal]);
+    if (val <= 0 || qty <= 0) continue;
+
+    stocks.push({ code, name, acct, qty, val });
+  }
+
+  return stocks;
+}
+
+// ── J-Quants API：配当予想取得（V2 x-api-key方式）──
+async function fetchDividend(code, apiKey) {
+  const url = `https://api.jquants.com/v2/fins/statements?code=${code}`;
+  const res = await fetch(url, {
+    headers: { 'x-api-key': apiKey }
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  const stmts = data.statements;
+  if (!stmts || stmts.length === 0) return null;
+
+  // 最新の決算を取得し年間配当予想を返す
+  const latest = stmts[stmts.length - 1];
+  const annual = parseFloat(latest.ForecastDividendPerShareAnnual);
+  if (isNaN(annual) || annual <= 0) return null;
+  return annual;
+}
+
+// ── J-Quants APIキー疎通確認（V2はIDトークン不要・直接x-api-keyで通信）──
+async function getIdToken(apiKey) {
+  // V2ではAPIキーをそのまま使うため、疎通確認として銘柄一覧を1件だけ取得
+  const res = await fetch('https://api.jquants.com/v2/listed/info?code=86970', {
+    headers: { 'x-api-key': apiKey }
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error('APIキーが無効です。J-Quantsのダッシュボードで確認してください。\n' + (err.message || err.detail || ''));
+  }
+  // V2はAPIキーをそのまま返す（IDトークン不要）
+  return apiKey;
+}
+
+// ── メイン処理 ──
+async function startAnalysis() {
+  showError('');
+  const apiKey = document.getElementById('api-key-input').value.trim();
+  if (!apiKey) { showError('APIキーを入力してください。'); return; }
+  if (!csvFile) { showError('CSVファイルを選択してください。'); return; }
+
+  // Loading表示
+  document.getElementById('setup-screen').classList.add('hidden');
+  document.getElementById('loading-screen').classList.add('visible');
+
+  try {
+    // CSV読み込み
+    setLoading('CSVを読み込んでいます...');
+    const text = await readFileAsText(csvFile);
+    const stocks = parseCSV(text);
+    if (stocks.length === 0) throw new Error('国内株式の銘柄が見つかりませんでした。');
+
+    // IDトークン取得
+    setLoading('J-Quants APIに接続しています...');
+    const idToken = await getIdToken(apiKey);
+
+    // 各銘柄の配当データ取得
+    const results = [];
+    for (let i = 0; i < stocks.length; i++) {
+      const s = stocks[i];
+      setLoading(`配当データ取得中... ${i + 1} / ${stocks.length}  (${s.name})`);
+      const divPerShare = await fetchDividend(s.code, idToken);
+      results.push({ ...s, divPerShare });
+      // レート制限対策
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    // ローカルストレージにAPIキーを保存（次回省略用）
+    try { localStorage.setItem('jquants_apikey', apiKey); } catch {}
+
+    // ダッシュボード描画
+    renderDashboard(results);
+
+  } catch (err) {
+    document.getElementById('loading-screen').classList.remove('visible');
+    document.getElementById('setup-screen').classList.remove('hidden');
+    showError('エラー: ' + err.message);
+    console.error(err);
+  }
+}
+
+// ── ダッシュボード描画 ──
+function renderDashboard(results) {
+  document.getElementById('loading-screen').classList.remove('visible');
+  document.getElementById('dashboard').classList.add('visible');
+  document.getElementById('header-date').textContent = new Date().toLocaleDateString('ja-JP');
+
+  // 集計
+  const withDiv  = results.filter(r => r.divPerShare !== null);
+  const noDiv    = results.filter(r => r.divPerShare === null);
+
+  // 同一銘柄・異口座を合算
+  const byCode = {};
+  for (const r of results) {
+    if (!byCode[r.code]) byCode[r.code] = { ...r, qty: 0, val: 0, annualDiv: 0 };
+    byCode[r.code].qty += r.qty;
+    byCode[r.code].val += r.val;
+    if (r.divPerShare !== null) {
+      byCode[r.code].annualDiv += r.divPerShare * r.qty;
+    }
+  }
+
+  const totalAnnualDiv = results.reduce((s, r) =>
+    s + (r.divPerShare !== null ? r.divPerShare * r.qty : 0), 0);
+  const totalVal = results.reduce((s, r) => s + r.val, 0);
+  const avgYield = totalVal > 0 ? (totalAnnualDiv / totalVal * 100) : 0;
+
+  // メトリクス
+  document.getElementById('m-total-div').textContent = fmt(Math.round(totalAnnualDiv));
+  document.getElementById('m-monthly-div').textContent = fmt(Math.round(totalAnnualDiv / 12));
+  document.getElementById('m-avg-yield').textContent = fmtPct(avgYield);
+  document.getElementById('m-coverage').textContent = `${withDiv.length} / ${results.length} 銘柄`;
+
+  // 未取得バナー
+  const warnWrap = document.getElementById('warn-banner-wrap');
+  if (noDiv.length > 0) {
+    warnWrap.innerHTML = `<div class="warn-banner">⚠️ 以下 ${noDiv.length} 銘柄は配当データを取得できませんでした（集計から除外）：${noDiv.map(r => r.name).join('、')}</div>`;
+  } else {
+    warnWrap.innerHTML = '';
+  }
+
+  // 棒グラフ（銘柄別年間配当額 上位15件）
+  const sorted = [...results]
+    .filter(r => r.divPerShare !== null)
+    .sort((a, b) => (b.divPerShare * b.qty) - (a.divPerShare * a.qty))
+    .slice(0, 15);
+
+  destroyChart('bar');
+  charts.bar = new Chart(document.getElementById('bar-chart'), {
+    type: 'bar',
+    data: {
+      labels: sorted.map(r => r.name.length > 10 ? r.name.slice(0, 10) + '…' : r.name),
+      datasets: [{
+        data: sorted.map(r => Math.round(r.divPerShare * r.qty)),
+        backgroundColor: 'rgba(245,166,35,0.6)',
+        borderColor: '#f5a623',
+        borderWidth: 1.5,
+        borderRadius: 5,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => `年間配当: ${c.raw.toLocaleString()}円` } }
+      },
+      scales: {
+        x: { ticks: { callback: v => `${Math.round(v/1e4)}万`, color: '#555c70', font:{size:11} }, grid:{color:'rgba(255,255,255,0.04)'} },
+        y: { ticks: { color: '#8b90a0', font:{size:11} }, grid:{display:false} }
+      }
+    }
+  });
+
+  // ドーナツ（口座別）
+  const acctMap = {};
+  for (const r of results) {
+    if (r.divPerShare === null) continue;
+    let k = r.acct;
+    if (k.includes('NISA成長')) k = 'NISA成長';
+    else if (k.includes('つみたて') || k.includes('積立')) k = 'NISAつみたて';
+    else if (k.includes('旧NISA')) k = '旧NISA';
+    else if (k === '特定') k = '特定';
+    else k = 'その他';
+    acctMap[k] = (acctMap[k] || 0) + r.divPerShare * r.qty;
+  }
+  const acctKeys = Object.keys(acctMap).sort((a,b) => acctMap[b]-acctMap[a]);
+  const acctColors = { '特定':'#4f8ef7','NISA成長':'#3ecf8e','NISAつみたて':'#a78bfa','旧NISA':'#f5a623','その他':'#8b90a0' };
+
+  destroyChart('donut');
+  charts.donut = new Chart(document.getElementById('donut-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: acctKeys,
+      datasets: [{
+        data: acctKeys.map(k => Math.round(acctMap[k])),
+        backgroundColor: acctKeys.map(k => acctColors[k] || '#8b90a0'),
+        borderWidth: 2, borderColor: '#161b27'
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '65%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => `${c.label}: ${c.raw.toLocaleString()}円` } }
+      }
+    }
+  });
+  document.getElementById('donut-legend').innerHTML = acctKeys.map(k => `
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:7px;">
+        <div style="width:8px;height:8px;border-radius:2px;background:${acctColors[k]||'#8b90a0'};flex-shrink:0;"></div>
+        <span style="color:var(--text2);">${k}</span>
+      </div>
+      <span style="font-family:'DM Mono',monospace;">${Math.round(acctMap[k]).toLocaleString()}円</span>
+    </div>`).join('');
+
+  // テーブル
+  const tableRows = [...results].sort((a, b) => {
+    const da = a.divPerShare !== null ? a.divPerShare * a.qty : -1;
+    const db = b.divPerShare !== null ? b.divPerShare * b.qty : -1;
+    return db - da;
+  });
+
+  document.getElementById('div-tbody').innerHTML = tableRows.map(r => {
+    const annualDiv = r.divPerShare !== null ? Math.round(r.divPerShare * r.qty) : null;
+    const yld = annualDiv !== null && r.val > 0 ? (annualDiv / r.val * 100) : null;
+
+    let acctBadge = 'badge-toku', acctLabel = r.acct;
+    if (r.acct.includes('NISA成長'))                              { acctBadge = 'badge-nisa'; acctLabel = 'NISA成長'; }
+    else if (r.acct.includes('つみたて')||r.acct.includes('積立')){ acctBadge = 'badge-na';   acctLabel = 'つみたて'; }
+    else if (r.acct.includes('旧NISA'))                           { acctBadge = 'badge-old';  acctLabel = '旧NISA'; }
+
+    return `<tr>
+      <td style="font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis;" title="${r.name}">${r.name}<br><span style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;">${r.code}</span></td>
+      <td><span class="badge ${acctBadge}">${acctLabel}</span></td>
+      <td class="mono" style="text-align:right;">${r.qty.toLocaleString()} 株</td>
+      <td class="mono" style="text-align:right;">${r.divPerShare !== null ? r.divPerShare.toLocaleString() + ' 円' : '—'}</td>
+      <td class="mono" style="text-align:right;color:var(--amber);font-weight:600;">${annualDiv !== null ? annualDiv.toLocaleString() + ' 円' : '—'}</td>
+      <td class="mono" style="text-align:right;">${Math.round(r.val/1e4)}万円</td>
+      <td class="mono" style="text-align:right;color:var(--green);">${yld !== null ? fmtPct(yld) : '—'}</td>
+      <td style="text-align:center;"><span class="badge ${r.divPerShare !== null ? 'badge-ok' : 'badge-na'}">${r.divPerShare !== null ? '取得済' : '未取得'}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function destroyChart(key) {
+  if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+}
+
+function resetAll() {
+  document.getElementById('dashboard').classList.remove('visible');
+  document.getElementById('setup-screen').classList.remove('hidden');
+  csvFile = null;
+  document.getElementById('file-name').textContent = '';
+  document.getElementById('file-input').value = '';
+  document.getElementById('start-btn').disabled = true;
+  showError('');
+}
+
+// ── ファイル選択 ──
+function handleFile(file) {
+  if (!file || !file.name.toLowerCase().endsWith('.csv')) {
+    showError('CSVファイルを選択してください。'); return;
+  }
+  showError('');
+  csvFile = file;
+  document.getElementById('file-name').textContent = '✓ ' + file.name;
+  updateStartBtn();
+}
+
+function updateStartBtn() {
+  const hasKey = document.getElementById('api-key-input').value.trim().length > 0;
+  const hasFile = csvFile !== null;
+  document.getElementById('start-btn').disabled = !(hasKey && hasFile);
+}
+
+// ── イベント ──
+document.getElementById('api-key-input').addEventListener('input', updateStartBtn);
+document.getElementById('file-input').addEventListener('change', e => handleFile(e.target.files[0]));
+
+const dropBox = document.getElementById('drop-box');
+dropBox.addEventListener('dragover', e => { e.preventDefault(); dropBox.classList.add('dragover'); });
+dropBox.addEventListener('dragleave', () => dropBox.classList.remove('dragover'));
+dropBox.addEventListener('drop', e => {
+  e.preventDefault();
+  dropBox.classList.remove('dragover');
+  handleFile(e.dataTransfer.files[0]);
+});
+
+// 保存済みAPIキーを復元
+try {
+  const saved = localStorage.getItem('jquants_apikey');
+  if (saved) {
+    document.getElementById('api-key-input').value = saved;
+    updateStartBtn();
+  }
+} catch {}
+</script>
+</body>
+</html>
